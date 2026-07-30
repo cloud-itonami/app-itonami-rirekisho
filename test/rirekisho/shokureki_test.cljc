@@ -1,0 +1,103 @@
+(ns rirekisho.shokureki-test
+  (:require [clojure.test :refer [deftest is testing]]
+            [rirekisho.shokureki :as s]))
+
+(def ^:private base
+  {:style :reverse-chronological
+   :summary "Web アプリケーションの設計と実装に 8 年。直近は決済基盤。"
+   :entries [{:organization "株式会社A" :from "2016-04" :to "2020-03"
+              :duties ["社内業務システムの設計・実装"]}
+             {:organization "株式会社B" :from "2020-04" :to nil
+              :duties ["決済基盤の設計" "チームリード"]}]})
+
+(deftest a-well-formed-shokureki-is-valid
+  (is (s/valid? base))
+  (is (empty? (s/problems base))))
+
+(deftest a-summary-is-required
+  (testing "冒頭の要約が無いと、読み手は本文を読むまで何の人か分からない"
+    (is (= :required (:problem (first (s/problems (dissoc base :summary))))))))
+
+(deftest the-style-must-be-one-of-the-three
+  (let [p (first (s/problems (assoc base :style :freeform)))]
+    (is (= :must-be-one-of (:problem p)))
+    (is (= #{:chronological :reverse-chronological :functional} (:allowed p)))))
+
+(deftest at-least-one-entry-is-required
+  (is (= :at-least-one-entry-required
+         (:problem (first (s/problems (assoc base :entries [])))))))
+
+(deftest every-entry-needs-an-organization-and-a-duty
+  (let [ps (s/problems (assoc base :entries [{:from "2020-04" :duties []}]))]
+    (is (= #{:organization-required :at-least-one-duty-required}
+           (into #{} (map :problem) ps)))
+    (is (every? #(= 0 (:index %)) ps))))
+
+(deftest all-problems-are-returned-not-just-the-first
+  (let [ps (s/problems {:style :nope :entries [{:duties []}]})]
+    (is (<= 3 (count ps)))))
+
+(deftest an-open-ended-entry-is-allowed
+  (testing "在職中は :to が空"
+    (is (s/valid? (assoc-in base [:entries 1 :to] nil)))
+    (is (s/valid? (assoc-in base [:entries 1 :to] "")))))
+
+(deftest a-malformed-period-is-caught
+  (is (= :from-must-be-yyyy-mm
+         (:problem (first (s/problems (assoc-in base [:entries 0 :from] "H28"))))))
+  (is (= :to-must-be-yyyy-mm-or-blank
+         (:problem (first (s/problems (assoc-in base [:entries 0 :to] "いつか")))))))
+
+(deftest a-reversed-period-is-caught
+  (is (= :from-is-after-to
+         (:problem (first (s/problems (-> base
+                                          (assoc-in [:entries 0 :from] "2020-04")
+                                          (assoc-in [:entries 0 :to] "2016-03"))))))))
+
+(deftest the-functional-style-does-not-demand-periods
+  (testing "キャリア式は「いつ」より「何を」の型なので、期間を必須にしない"
+    (let [f (-> base
+                (assoc :style :functional)
+                (assoc :entries [{:organization "決済基盤" :duties ["設計"]}]))]
+      (is (s/valid? f)))))
+
+;; ───────── 並び順は宣言に従わせる ─────────
+
+(deftest reverse-chronological-puts-the-newest-first
+  (testing "呼び出し側が古い順で渡しても、宣言した型に合わせて並べ直す"
+    (let [built (s/shokureki base)]
+      (is (= ["株式会社B" "株式会社A"] (mapv :organization (:entries built)))))))
+
+(deftest chronological-puts-the-oldest-first
+  (let [built (s/shokureki (assoc base :style :chronological))]
+    (is (= ["株式会社A" "株式会社B"] (mapv :organization (:entries built))))))
+
+(deftest the-functional-style-keeps-the-authors-order
+  (testing "職務内容のまとまりの順序は書き手が決めるもの"
+    (let [f (assoc base :style :functional)
+          built (s/shokureki f)]
+      (is (= ["株式会社A" "株式会社B"] (mapv :organization (:entries built)))))))
+
+;; ───────── 期間の集計 ─────────
+
+(deftest duration-counts-inclusive-months
+  (is (= 48 (s/duration-months {:from "2016-04" :to "2020-03"} "2026-07")))
+  (testing "在職中は now まで数える"
+    (is (= 4 (s/duration-months {:from "2026-04" :to nil} "2026-07")))))
+
+(deftest an-unreadable-period-is-nil-not-zero
+  (testing "0 を返すと『在籍していない』と読めてしまう"
+    (is (nil? (s/duration-months {:from "H28" :to "2020-03"} "2026-07")))))
+
+(deftest the-total-reports-what-it-could-not-count
+  (let [t (s/total-months (assoc base :entries
+                                 [{:from "2016-04" :to "2020-03"}
+                                  {:from "H28" :to "2020-03"}])
+                          "2026-07")]
+    (is (= 48 (:months t)))
+    (testing "黙って落とすと、合計が実際より短いことに誰も気づかない"
+      (is (= 1 (:uncounted t))))))
+
+(deftest organization-names-are-identifying
+  (testing "在籍企業名は氏名が無くても人を特定しうる"
+    (is (contains? s/identifying-fields :entries))))

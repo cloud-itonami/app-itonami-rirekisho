@@ -1,0 +1,80 @@
+(ns rirekisho.store-test
+  (:require [clojure.string :as str]
+            [clojure.test :refer [deftest is testing]]
+            [rirekisho.store :as store]))
+
+(def ^:private resume
+  {:name "川崎 純" :name-kana "かわさき じゅん" :address "東京都…"})
+
+(defn- fake-object-store []
+  (let [a (atom {})]
+    {:objects a
+     :fns {:get-object (fn [k] (get @a k))
+           :put-object (fn [k v] (swap! a assoc k v) {:status 200})
+           :exists? (fn [k] (contains? @a k))}}))
+
+(defn- fake-seal [plaintext aad]
+  {:dek "DEK" :nonce "NONCE" :ciphertext (str "enc(" aad "):" plaintext)})
+
+(defn- fake-open [_dek _nonce ciphertext aad]
+  (subs ciphertext (count (str "enc(" aad "):"))))
+
+(deftest a-sealed-resume-round-trips-through-an-object-store
+  (let [{:keys [fns]} (fake-object-store)
+        {:keys [envelope dek key version]}
+        (store/put! fns fake-seal {:rid "rid:zRESUME" :version 1} resume)]
+    (is (= "rirekisho/rid:zRESUME/v1" key))
+    (is (= 1 version))
+    (is (= resume (store/get! fns fake-open dek envelope 1)))))
+
+(deftest the-store-receives-the-ciphertext-field-and-nothing-else
+  ;; 「平文が現れない」を fake の暗号に対して assert しても意味が無い（fake は
+  ;; 平文をそのまま含む）。それは cipher の性質で、実 provider 相手に kagi 側が
+  ;; 見ている。この ns が責任を持つのは **何を置き場に渡したか** の方なので、
+  ;; そちらを assert する。
+  (let [{:keys [objects fns]} (fake-object-store)
+        {:keys [envelope dek]}
+        (store/put! fns fake-seal {:rid "rid:zRESUME" :version 1} resume)]
+    (testing "置いたのは封筒の :envelope/ciphertext そのもの"
+      (is (= (:envelope/ciphertext envelope) (val (first @objects)))))
+    (testing "nonce も alg も鍵も置き場には渡っていない"
+      (is (not-any? #(str/includes? % (:envelope/nonce envelope)) (vals @objects)))
+      (is (not-any? #(str/includes? % dek) (vals @objects))))))
+
+(deftest the-dek-is-returned-but-never-stored
+  (let [{:keys [objects fns]} (fake-object-store)
+        {:keys [dek]} (store/put! fns fake-seal {:rid "rid:zRESUME" :version 1} resume)]
+    (testing "呼び出し側は DEK を受け取る（どこに保つかは呼び出し側が決める）"
+      (is (= "DEK" dek)))
+    (is (= 1 (count @objects)))))
+
+(deftest each-version-takes-its-own-key
+  (testing "1 キー = 1 版。kagi 側の上書き拒否はこの前提の上に立っている"
+    (let [{:keys [objects fns]} (fake-object-store)]
+      (store/put! fns fake-seal {:rid "rid:zRESUME" :version 1} resume)
+      (store/put! fns fake-seal {:rid "rid:zRESUME" :version 2}
+                  (assoc resume :self-pr "追記"))
+      (is (= #{"rirekisho/rid:zRESUME/v1" "rirekisho/rid:zRESUME/v2"}
+             (set (keys @objects)))))))
+
+(deftest a-missing-version-is-nil
+  (let [{:keys [fns]} (fake-object-store)]
+    (is (nil? (store/get! fns fake-open "DEK"
+                          {:envelope/rid "rid:zRESUME" :envelope/aad "rirekisho:rid:zRESUME"}
+                          9)))))
+
+(deftest exists-reports-per-version
+  (let [{:keys [fns]} (fake-object-store)]
+    (store/put! fns fake-seal {:rid "rid:zRESUME" :version 1} resume)
+    (is (true? (store/stored? fns "rid:zRESUME" 1)))
+    (is (false? (store/stored? fns "rid:zRESUME" 2)))))
+
+(deftest a-store-without-a-writer-is-refused
+  (is (thrown? #?(:clj clojure.lang.ExceptionInfo :cljs js/Error)
+               (store/put! {} fake-seal {:rid "r" :version 1} resume))))
+
+(deftest a-version-must-be-an-integer
+  (testing "版が文字列だと key が黙って別物になり、上書き拒否も効かなくなる"
+    (is (thrown? #?(:clj clojure.lang.ExceptionInfo :cljs js/Error)
+                 (store/put! (:fns (fake-object-store)) fake-seal
+                             {:rid "r" :version "1"} resume)))))

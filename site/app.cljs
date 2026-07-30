@@ -13,7 +13,11 @@
 ;; 解決できない。実測: `Could not resolve symbol: model/problems`。
 (ns rirekisho.app
   (:require [clojure.string :as str]
-            [rirekisho.model :as model]))
+            [rirekisho.model :as model]
+            [rirekisho.shokureki :as shokureki]))
+
+;; 職務経歴書側は下で定義するが、問題表示は 1 箇所にまとめたいので先に宣言する。
+(declare sk-problem-text add-shokureki-entry!)
 
 (defn- el [id] (.getElementById js/document id))
 
@@ -85,7 +89,8 @@
         (doseq [p problems]
           (let [li (.createElement js/document "li")]
             ;; textContent。innerHTML に入力由来の文字列を混ぜない。
-            (set! (.-textContent li) (problem-text p))
+            (set! (.-textContent li)
+                  (if (::shokureki p) (sk-problem-text p) (problem-text p)))
             (.appendChild ul li)))
         (.appendChild node ul)))))
 
@@ -183,12 +188,109 @@
 
 ;; ───────── 反映 ─────────
 
+;; ───────── 職務経歴書 ─────────
+
+(defn- collect-shokureki []
+  (let [nodes (.querySelectorAll js/document ".rk-entry")
+        entries (->> (range (.-length nodes))
+                     (map (fn [i]
+                            (let [idx (.getAttribute (.item nodes i) "data-index")
+                                  org (value (str "sk-org-" idx))
+                                  from (value (str "sk-from-" idx))
+                                  to (value (str "sk-to-" idx))
+                                  duties (->> (str/split-lines (or (value (str "sk-duties-" idx)) ""))
+                                              (map str/trim)
+                                              (remove str/blank?)
+                                              vec)]
+                              (when-not (and (str/blank? (or org "")) (str/blank? (or from ""))
+                                             (empty? duties))
+                                {:organization org :from from
+                                 :to (blank->nil to) :duties duties}))))
+                     (remove nil?)
+                     vec)]
+    {:style (keyword (or (blank->nil (value "sk-style")) "reverse-chronological"))
+     :summary (blank->nil (value "sk-summary"))
+     :entries entries}))
+
+(def ^:private sk-problem-messages
+  {:required "入力してください"
+   :must-be-one-of "構成の型を選んでください"
+   :must-be-a-sequence "職歴の形式が不正です"
+   :at-least-one-entry-required "職歴を 1 件以上入力してください"
+   :organization-required "会社・組織名を入力してください"
+   :at-least-one-duty-required "担当業務を 1 行以上入力してください"
+   :from-must-be-yyyy-mm "在籍開始は YYYY-MM で入力してください"
+   :to-must-be-yyyy-mm-or-blank "在籍終了は YYYY-MM か空欄にしてください"
+   :from-is-after-to "在籍開始が終了より後になっています"})
+
+(def ^:private sk-field-labels
+  {:style "構成の型" :summary "職務要約" :entries "職歴"})
+
+(defn- sk-problem-text [{:keys [field problem index]}]
+  (str (get sk-field-labels field (name field))
+       (when index (str " " (inc index) "件目"))
+       ": " (get sk-problem-messages problem (name problem))))
+
+(defn- render-shokureki! [sk]
+  (let [node (el "sk-preview")
+        doc (.createElement js/document "div")]
+    (set! (.-innerHTML node) "")
+    (set! (.-className doc) "rk-doc")
+    (let [h3 (.createElement js/document "h3")]
+      (set! (.-textContent h3) "職務経歴書")
+      (.appendChild doc h3))
+    (let [p (.createElement js/document "p")]
+      (set! (.-className p) "rk-doc-style")
+      (set! (.-textContent p)
+            (str (get-in shokureki/styles [(:style sk) :label] "—")))
+      (.appendChild doc p))
+    (.appendChild doc (section-node "職務要約"))
+    (let [p (.createElement js/document "p")]
+      (if (:summary sk)
+        (set! (.-textContent p) (:summary sk))
+        (do (set! (.-className p) "rk-doc-empty")
+            (set! (.-textContent p) "（未入力）")))
+      (.appendChild doc p))
+    (.appendChild doc (section-node "職務経歴"))
+    ;; **並び順は shokureki/ordered-entries に決めさせる。** 入力順のまま出すと、
+    ;; 型を宣言しているのに中身が従っていない書類になる。
+    (let [entries (shokureki/ordered-entries sk)]
+      (if (seq entries)
+        (doseq [{:keys [organization from to duties]} entries]
+          (let [h (.createElement js/document "h5")
+                period (.createElement js/document "p")
+                ul (.createElement js/document "ul")]
+            (set! (.-textContent h) (or organization "—"))
+            (set! (.-className period) "rk-doc-period")
+            (set! (.-textContent period)
+                  (str (or from "—") " 〜 " (or to "現在")))
+            (.appendChild doc h)
+            (.appendChild doc period)
+            (doseq [d duties]
+              (let [li (.createElement js/document "li")]
+                (set! (.-textContent li) d)
+                (.appendChild ul li)))
+            (.appendChild doc ul)))
+        (let [p (.createElement js/document "p")]
+          (set! (.-className p) "rk-doc-empty")
+          (set! (.-textContent p) "（未入力）")
+          (.appendChild doc p))))
+    (.appendChild node doc)))
+
 (defn refresh! []
   (let [r (collect)]
     ;; model/problems は **全部**返す(1 つ目で止めない)ので、一度の入力で
     ;; すべての欄に印を付けられる。
-    (render-problems! (model/problems r))
-    (render-preview! r)))
+    (let [sk (collect-shokureki)
+          ;; 職務経歴書がまだ空（型だけ既定値）のうちは問題を出さない ——
+          ;; 開いた瞬間に赤が出ると、書き始める前から間違っていると読める。
+          sk-touched? (or (:summary sk) (seq (:entries sk)))]
+      (render-problems! (concat (model/problems r)
+                                (when sk-touched?
+                                  (map #(assoc % ::shokureki true)
+                                       (shokureki/problems sk)))))
+      (render-preview! r)
+      (render-shokureki! sk))))
 
 (defn- add-history-row! []
   (let [rows (.getElementById js/document "history-rows")
@@ -211,11 +313,64 @@
     (.appendChild rows div)
     (refresh!)))
 
+(defn- add-shokureki-entry! []
+  (let [box (.getElementById js/document "sk-entries")
+        n (.-length (.querySelectorAll js/document ".rk-entry"))
+        div (.createElement js/document "div")]
+    (set! (.-className div) "rk-entry")
+    (.setAttribute div "data-index" (str n))
+    (doseq [[suffix label ph] [["org" "会社・組織名" "株式会社○○"]
+                               ["from" "在籍開始" "2020-04"]
+                               ["to" "在籍終了（在職中なら空欄）" "2024-03"]]]
+      (let [wrap (.createElement js/document "div")
+            lab (.createElement js/document "label")
+            span (.createElement js/document "span")
+            input (.createElement js/document "input")
+            id (str "sk-" suffix "-" n)]
+        (set! (.-className wrap) "dads-form-control-label")
+        (.setAttribute wrap "data-size" "md")
+        (set! (.-className lab) "dads-form-control-label__label")
+        (set! (.-htmlFor lab) id)
+        (set! (.-textContent lab) label)
+        (set! (.-className span) "dads-input-text")
+        (set! (.-className input) "dads-input-text__input")
+        (.setAttribute input "data-size" "md")
+        (set! (.-type input) "text")
+        (set! (.-id input) id)
+        (set! (.-placeholder input) ph)
+        (.appendChild span input)
+        (.appendChild wrap lab)
+        (.appendChild wrap span)
+        (.appendChild div wrap)))
+    (let [wrap (.createElement js/document "div")
+          lab (.createElement js/document "label")
+          span (.createElement js/document "span")
+          ta (.createElement js/document "textarea")
+          id (str "sk-duties-" n)]
+      (set! (.-className wrap) "dads-form-control-label")
+      (set! (.-className lab) "dads-form-control-label__label")
+      (set! (.-htmlFor lab) id)
+      (set! (.-textContent lab) "担当業務（1 行に 1 つ）")
+      (set! (.-className span) "dads-textarea")
+      (set! (.-className ta) "dads-textarea__textarea")
+      (set! (.-rows ta) 3)
+      (set! (.-id ta) id)
+      (.appendChild span ta)
+      (.appendChild wrap lab)
+      (.appendChild wrap span)
+      (.appendChild div wrap))
+    (.appendChild box div)
+    (refresh!)))
+
 (defn init! []
   (.addEventListener (.getElementById js/document "rirekisho-form") "input"
                      (fn [_] (refresh!)))
   (.addEventListener (.getElementById js/document "add-history-row") "click"
                      (fn [_] (add-history-row!)))
+  (.addEventListener (.getElementById js/document "rirekisho-form") "change"
+                     (fn [_] (refresh!)))
+  (.addEventListener (.getElementById js/document "sk-add-entry") "click"
+                     (fn [_] (add-shokureki-entry!)))
   (.addEventListener (.getElementById js/document "print") "click"
                      (fn [_] (.print js/window)))
   (refresh!))

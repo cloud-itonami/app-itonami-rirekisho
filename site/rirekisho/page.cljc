@@ -86,6 +86,42 @@
           {:textarea? true :rows 3
            :support "給与・職種・勤務時間・勤務地など、希望があれば記入します。"})))
 
+;; ───────── 職務経歴書 ─────────
+
+(defn- shokureki-entry [i]
+  [:div {:class "rk-entry" :data-index (str i)}
+   (dds/form-field {:label "会社・組織名" :for (str "sk-org-" i)}
+                   (dds/input-text {:id (str "sk-org-" i) :placeholder "株式会社○○"}))
+   [:div {:class "rk-entry-period"}
+    (dds/form-field {:label "在籍開始" :for (str "sk-from-" i)}
+                    (dds/input-text {:id (str "sk-from-" i) :placeholder "2020-04"}))
+    (dds/form-field {:label "在籍終了" :for (str "sk-to-" i)
+                     :support "在職中なら空欄"}
+                    (dds/input-text {:id (str "sk-to-" i) :placeholder "2024-03"}))]
+   (dds/form-field {:label "担当業務（1 行に 1 つ）" :for (str "sk-duties-" i)}
+                   (dds/textarea {:id (str "sk-duties-" i) :rows 3
+                                  :placeholder "決済基盤の設計\nチームリード"}))])
+
+(defn- shokureki-section []
+  (dds/section
+   {:title "職務経歴書" :id "shokureki"}
+   [:p {:class "rk-note"}
+    "職務経歴書には "
+    [:strong "公的な様式がありません"]
+    "。A4 1〜2 枚という慣行と、3 つの構成の型があるだけです。"
+    "型を選ぶと、並び順はその型のとおりに整えます。"]
+   (dds/form-field
+    {:label "構成の型" :for "sk-style"}
+    (dds/select {:id "sk-style"}
+                [["reverse-chronological" "逆編年式（新しい順）"]
+                 ["chronological" "編年式（古い順）"]
+                 ["functional" "キャリア式（職務内容ごと）"]]))
+   (field "sk-summary" "職務要約"
+          {:textarea? true :rows 3
+           :support "冒頭の要約が無いと、読み手は本文を読むまで何の人か分かりません。"})
+   (into [:div {:id "sk-entries"}] (map shokureki-entry (range 2)))
+   (dds/button "職歴を追加" {:type :outline :id "sk-add-entry"})))
+
 ;; ───────── 様式の説明 ─────────
 
 (defn- removed-fields-section []
@@ -133,12 +169,14 @@
        (basic-section)
        (history-section)
        (free-text-section)
+       (shokureki-section)
        (removed-fields-section)]
 
       [:div {:class "rk-preview-pane"}
        (dds/heading 2 "プレビュー" {:size "32"})
        [:div {:id "problems" :class "rk-problems" :role "status" :aria-live "polite"}]
        [:div {:id "preview" :class "rk-preview"}]
+       [:div {:id "sk-preview" :class "rk-preview"}]
        (dds/button "印刷 / PDF 保存" {:type :solid-fill :size "lg" :id "print"})
        [:p {:class "rk-note"}
         "印刷ダイアログで「PDF に保存」を選ぶと PDF になります。用紙は A4 です。"]]])]
@@ -166,6 +204,8 @@
 @media (min-width: 60rem) { .rk-columns { grid-template-columns: minmax(0,1fr) minmax(0,1fr); align-items: start; } }
 .rk-preview-pane { position: sticky; top: 1rem; }
 .rk-note { font-size: .875rem; max-width: 46em; }
+.rk-entry { border: 1px solid var(--color-border-divider, #d8d8d8); padding: 1rem; margin-bottom: 1rem; }
+.rk-entry-period { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
 .rk-history-row { display: grid; grid-template-columns: 5rem 4rem minmax(0,1fr); gap: .5rem; margin-bottom: .5rem; }
 .rk-problems:not(:empty) { margin: .75rem 0; padding: .75rem 1rem; border-left: 4px solid var(--color-error-1, #ec0000); background: #fff5f5; }
 .rk-problems ul { margin: 0; padding-left: 1.25rem; }
@@ -185,6 +225,7 @@
   .rk-header, .rk-form, .rk-footer, .rk-problems, #print,
   .rk-preview-pane > h2, .rk-preview-pane > .rk-note { display: none !important; }
   .rk-preview { border: 0; padding: 0; margin: 0; }
+  #sk-preview { break-before: page; page-break-before: always; }
   .rk-main { padding: 0; }
   .rk-columns { display: block; }
   .rk-preview-pane { position: static; }
@@ -204,5 +245,6 @@
     ;; 第三者に「誰がいつ開いたか」を渡すことになる。
     :head [[:script {:src "./scittle.js"}]
            [:script {:type "application/x-scittle" :src "./rirekisho/model.cljs"}]
+           [:script {:type "application/x-scittle" :src "./rirekisho/shokureki.cljs"}]
            [:script {:type "application/x-scittle" :src "./app.cljs"}]]}
    (body)))
