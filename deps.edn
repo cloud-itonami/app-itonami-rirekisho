@@ -7,7 +7,19 @@
  :aliases
  {:test {:extra-paths ["test"]
          :extra-deps {io.github.cognitect-labs/test-runner
-                      {:git/tag "v0.5.1" :git/sha "dfb30dd"}}
+                      {:git/tag "v0.5.1" :git/sha "dfb30dd"}
+                      ;; TEST-ONLY. `rirekisho.provenance` は依存ゼロのまま
+                      ;; （CBOR も署名器も注入する）だが、「nekko.sigref と
+                      ;; バイト互換」は主張ではなく検証したい。本物の nekko と
+                      ;; ed25519 をここだけで引いて、両方向を通す。
+                      ;;
+                      ;; 実行時に依存しないのは nekko.sigref が ed25519.core に
+                      ;; 直接依存しており、その ns が今日 JVM 専用だから
+                      ;; （nekko 自身の docstring がそう書いている）。依存すると
+                      ;; この repo のブラウザ側が丸ごと動かなくなる。
+                      io.github.kotoba-lang/kotoba-rad
+                      {:git/url "https://github.com/kotoba-lang/kotoba-rad.git"
+                       :git/sha "a89db47d180b1f22375ad1a5d7ea0c438638d110"}}
          :main-opts ["-m" "cognitect.test-runner"]
          :exec-fn cognitect.test-runner.api/test}
   :lint {:replace-deps {clj-kondo/clj-kondo {:mvn/version "2024.11.14"}}
