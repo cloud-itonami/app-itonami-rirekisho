@@ -1,0 +1,82 @@
+(ns rirekisho.envelope
+  "**永続化してよい形は封緘された封筒だけ**、という不変条件。
+
+  ## この ns が防ぐ具体的な失敗
+
+  etzhayyim の talent は「識別項目は `signal:v1:` 暗号文のみ」という同じ規則を
+  持っているが、その実装は**プレフィックス文字列の検査**であって暗号化そのものは
+  呼び出し側任せになっている(`talent/methods/agent.cljc`)。規則としては効くが、
+  `\"signal:v1:\" + 平文` を書けば通ってしまう。
+
+  ここでは封筒を作れる関数を `seal` 1 本に絞り、`seal` は必ず注入された
+  `kagi.crypto/Provider` を通す。`persistable?` は「プレフィックスが付いているか」
+  ではなく「**この値が seal の出力そのものか**」を見る。
+
+  ## 依存の向き
+
+  この ns は kagi に依存しない —— provider を引数で受け取るだけ。ブラウザでは
+  `kagi.crypto.noble/noble-provider`、JVM では `kagi.crypto/jvm-provider` を渡す。
+  どちらも同じ `Provider` を満たし、相互運用は kagi 側の双方向テストが保証する。"
+  (:require [clojure.edn :as edn]
+            [rirekisho.model :as model]))
+
+(def envelope-keys
+  #{:envelope/rid :envelope/nonce :envelope/ciphertext :envelope/alg :envelope/aad})
+
+(def alg "kagi/aes-256-gcm/v1")
+
+(defn seal
+  "履歴書 → 封筒。**平文はここから先に出ない。**
+
+  `seal-fn` は `[plaintext aad] -> {:dek :nonce :ciphertext}`(= `kagi.crypto/seal-item`
+  に provider を部分適用したもの)。DEK は封筒に入れず別に返す —— 封筒と DEK を
+  同じ map で返すと、うっかり丸ごと永続化した時に封緘の意味が無くなる。"
+  [seal-fn rid rirekisho]
+  (let [aad (str "rirekisho:" rid)
+        {:keys [dek nonce ciphertext]} (seal-fn (pr-str rirekisho) aad)]
+    {:envelope {:envelope/rid rid
+                :envelope/nonce nonce
+                :envelope/ciphertext ciphertext
+                :envelope/alg alg
+                :envelope/aad aad}
+     :dek dek}))
+
+(defn open
+  "封筒 → 履歴書。`open-fn` は `[dek nonce ciphertext aad] -> plaintext-string`。
+
+  読み戻しは **`clojure.edn/read-string`** で、`clojure.core/read-string` は使わない。
+  後者は reader literal を評価するので、復号した中身を渡す先としては危険 —— 封筒が
+  改竄されていれば AEAD が先に落ちるとはいえ、パーサに評価能力を渡す理由が無い。"
+  [open-fn dek {:keys [:envelope/nonce :envelope/ciphertext :envelope/aad]}]
+  (edn/read-string (open-fn dek nonce ciphertext aad)))
+
+(defn leaks
+  "永続化しようとしている値に混ざった平文の識別項目を返す。空なら安全。
+
+  封筒の鍵しか持たない map は空を返す。履歴書そのものや、封筒に平文を1つ足した
+  map は、その欄名を返す。"
+  [v]
+  (if (map? v)
+    (into #{} (filter model/identifying-fields) (keys v))
+    #{}))
+
+(defn persistable?
+  "この値を store へ書いてよいか。
+
+  封筒の鍵だけで構成され、平文の識別項目を 1 つも持たないこと。**未知の鍵が
+  あっても false** —— 「知らない鍵は無害だろう」と通すと、schema が増えるたびに
+  この関門が緩む。"
+  [v]
+  (and (map? v)
+       (empty? (leaks v))
+       (every? envelope-keys (keys v))
+       (contains? v :envelope/ciphertext)))
+
+(defn ensure-persistable!
+  "書き込み直前の関門。通らなければ throw。"
+  [v]
+  (when-not (persistable? v)
+    (throw (ex-info "封緘されていない値を永続化しようとした"
+                    {:leaks (leaks v)
+                     :unexpected-keys (into #{} (remove envelope-keys) (keys v))})))
+  v)

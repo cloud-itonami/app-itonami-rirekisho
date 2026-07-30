@@ -1,0 +1,64 @@
+(ns rirekisho.disclosure-test
+  (:require [clojure.test :refer [deftest is testing]]
+            [rirekisho.disclosure :as d]))
+
+(def ^:private g
+  {:holder "did:key:zHOLDER" :recipient "did:key:zCOMPANY"
+   :fields #{:name :history} :purpose "2026年度 中途採用選考"
+   :issued-on "2026-07-30" :expires-on "2026-08-15"
+   :rid "rid:zRESUME"})
+
+(deftest a-well-formed-grant-is-valid
+  (is (empty? (d/problems g)))
+  (is (= g (d/grant g))))
+
+(deftest purpose-is-required
+  (testing "何のための開示かを書かない grant は、後で範囲を争えない"
+    (is (= [{:field :purpose :problem :required
+             :rationale "何のための開示かを書かない grant は、後で範囲を争えない"}]
+           (d/problems (dissoc g :purpose))))))
+
+(deftest an-unbounded-grant-is-refused
+  (is (= :required (:problem (first (d/problems (dissoc g :expires-on))))))
+  (testing "上限を超える期間も拒否する"
+    (is (= :exceeds-max-lifetime
+           (:problem (first (d/problems (assoc g :expires-on "2027-07-30"))))))))
+
+(deftest expiry-must-follow-issuance
+  (is (= :must-be-after-issued-on
+         (:problem (first (d/problems (assoc g :expires-on "2026-07-29")))))))
+
+(deftest removed-fields-cannot-be-disclosed
+  (let [p (first (d/problems (assoc g :fields #{:name :spouse})))]
+    (is (= :field-removed-by-the-2021-form (:problem p)))
+    (is (= #{:spouse} (:offending p)))))
+
+(deftest unknown-fields-are-refused
+  (let [p (first (d/problems (assoc g :fields #{:name :salary-history})))]
+    (is (= :unknown-field (:problem p)))
+    (is (= #{:salary-history} (:offending p)))))
+
+(deftest an-empty-grant-discloses-nothing-and-is-refused
+  (is (= :must-disclose-at-least-one-field
+         (:problem (first (d/problems (assoc g :fields #{})))))))
+
+(deftest projection-returns-only-the-granted-fields
+  (let [resume {:name "川崎 純" :name-kana "かわさき じゅん"
+                :date-of-birth "1985-01-01" :address "東京都…"
+                :history [{:year 2016 :month 4 :description "入学"}]}]
+    (is (= #{:name :history} (set (keys (d/project resume g)))))
+    (testing "grant に無い欄は 1 つも出ない"
+      (is (nil? (:date-of-birth (d/project resume g))))
+      (is (nil? (:address (d/project resume g)))))))
+
+(deftest the-resource-uri-names-the-fields-so-a-verifier-needs-no-acl
+  (is (= "rirekisho://disclose/rid:zRESUME?fields=history,name&purpose=2026年度 中途採用選考"
+         (d/resource-uri g))))
+
+(deftest revocation-does-not-claim-to-undo-what-was-already-read
+  (let [{:keys [tx-data already-disclosed]} (d/revoke (assoc g :db-id 42) {})]
+    (testing "フラグではなく retract"
+      (is (= [[:db/retractEntity 42]] tx-data)))
+    (testing "既に渡った平文は消えないと明示する"
+      (is (= "did:key:zCOMPANY" (:recipient already-disclosed)))
+      (is (= #{:name :history} (:fields already-disclosed))))))

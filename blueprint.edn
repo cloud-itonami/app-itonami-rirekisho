@@ -1,0 +1,22 @@
+{:itonami.blueprint/id "cloud-itonami-rirekisho"
+ :itonami.blueprint/name "Rirekisho — operator-blind resume authoring"
+ :itonami.blueprint/domain :labour/resume-authoring
+ :itonami.blueprint/license "AGPL-3.0-or-later"
+ :itonami.blueprint/social-impact [:job-seeker-privacy
+                                   :structural-non-discrimination
+                                   :self-sovereign-personal-data]
+ ;; ISIC を name に焼かない: 履歴書作成そのものは ISIC の 1 クラスに落ちず、
+ ;; 7810(職業紹介) の候補者側から見た対向面である。7810 のブループリントとは
+ ;; 別リポジトリのまま、cohort 面だけを共有しうる。
+ :itonami.blueprint/adjacent-isic ["7810" "6399"]
+ :itonami.blueprint/robotics false
+ :itonami.blueprint/required-technologies [:client-side-encryption
+                                           :capability-authorization
+                                           :k-anonymity]
+ :itonami.blueprint/status :public-oss
+ :itonami.blueprint/maturity :core-only
+ :itonami.blueprint/form-authority
+ {:issuer "厚生労働省"
+  :title "新たな履歴書の様式例"
+  :published "2021-04-16"
+  :supersedes "JIS Z 8303 の履歴書様式例(2020-07 の改正で削除)"}}
