@@ -86,31 +86,76 @@ VC data model / SD-JWT / BBS+ の選択的開示は無い）。一方
 両者の相互運用（JVM が封緘した封筒をブラウザが開ける／その逆）は kagi 側の双方向
 テストが実ベクタで保証している。ここで責務を二重に持たない。
 
+## 公開しているもの
+
+**https://itonami.cloud/cloud-itonami/cloud-itonami-rirekisho/** —— 履歴書と職務経歴書を
+ブラウザだけで作り、印刷 / PDF 保存できる。UI は
+[デジタル庁デザインシステム](https://www.digital.go.jp/policies/servicedesign/designsystem)。
+
+**入力は 1 バイトも送信されない。** サーバも fetch も localStorage も無く、外部
+リクエストもゼロ（DADS の CSS は inline、scittle は同一オリジン）。ページが読み込む
+検証ロジックは、下のテストが走るのと**同じ `.cljc`** —— UI 側だけ古くなることが
+構造的に起きない。
+
+## 職務経歴書には様式が無い
+
+履歴書と違い、職務経歴書には公的な様式が存在しない。A4 1〜2 枚という慣行と、3 つの
+構成の型（編年式 / 逆編年式 / キャリア式）があるだけ。だから `rirekisho.shokureki` は
+「正しい様式」を強制せず、**型を宣言させて、その型が要求するものだけを検査する**
+（`:functional` は期間を必須にしない —— 「いつ」より「何を」の型なので）。
+
+**並び順は宣言に従わせる。** 読み手には型の宣言しか見えないので、逆編年式と書いてある
+のに古い順で出る書類は、誰にも気づかれずに誤解を与える。
+
+## 受け取った側が検証できる（履歴書 1 通 = 1 RID）
+
+企業が受け取るのは封筒・DEK・attestation の 3 点。それだけで、我々に何も聞かずに
+確かめられる:
+
+1. 受け取った暗号文のダイジェストが、署名された `commit` と一致する（改竄されていない）
+2. 署名が本人の did:key で verify できる（本人が出した）
+3. `ref` が `refs/rirekisho/v<N>`（古い版を今の版だと言い張れない）
+
+attestation は [`nekko`](https://github.com/kotoba-lang/kotoba-rad)（Radicle 相当）の
+`sigref` と**バイト互換**なので、JVM の受け手は nekko でそのまま検証できる。それでいて
+この repo は nekko に依存しない（CBOR も署名器も注入）—— `nekko.sigref` は
+`ed25519.core` に直接依存しており、それが今日 JVM 専用だから。互換性は主張ではなく
+**両方向のテスト**で確かめている。
+
+## 封筒の置き場
+
+`rirekisho.store` は `{:get-object :put-object :exists?}` を受け取る ——
+`storj.store/store-fns` が返し、`kagi.store/object-sealed-block-store` が消費するのと
+同じ形。`put!` は DEK を**返す**が置き場には渡さない（どこに保つかは受け取った側が
+決める。既定を用意すると、その既定が『安全な置き場』だと読まれる）。
+
 ## 開発
 
 ```sh
-clojure -M:test    # 28 tests / 62 assertions
+clojure -M:test    # 84 tests / 155 assertions
 clojure -M:lint
 ```
 
 ## まだ無いもの
 
-正直に書く。この repo は**中核の値モデルと不変条件**であって、製品ではない。
-
-- **UI が無い。** 入力フォームも印刷レイアウトも未実装。書くときは skill
-  `kotoba-uiux`（`kotoba-ui.core` 単一エントリ、raw hex 禁止、layout は shell から）に従う。
-- **職務経歴書（`rirekisho.shokureki`）が未実装。** 編年式／逆編年式／キャリア式の
-  3 形式を想定しているが、まだ型が無い。
-- **nekko RID との配線が未実装。** 「履歴書 1 通 = 1 RID」（signed ref で版を検証、
-  ホストが消えても identity が残る）は設計として決まっているが、コードはまだ `:rid`
-  を文字列として受け取るだけ。
-- **x402 課金が未配線。** `nexus-x402`（`x402.nexus`、稼働中）に seller 登録して
-  prepaid quota を CACAO の `resources` に焼く設計だが、未実装。
-- **①の面の保存先の配線が未実装**（この repo 側）。kagi 側は 2026-07-30 に
-  `kagi.store/object-sealed-block-store` が入り、`storj.store/store-fns` 経由で
-  **Storj / Backblaze B2 に着地できるようになった**（IPFS は未対応 — immutable な
-  content addressing は「キーを上書きしない」の前提が別物）。この repo はまだその
-  4 関数を受け取る口を持っておらず、`envelope/seal` の出力を誰が置くかは呼び出し側任せ。
+- **x402 の seller 登録はしていない（意図的）。** 前払い quota を CACAO の
+  `resources` に焼く部分（`rirekisho.quota`）は実装済みだが、**課金する対象がまだ無い**
+  —— このサイトは静的でクライアント側完結、1 回使われても我々の限界費用はゼロで、
+  封筒を我々の側で預かる面もまだ動いていない。存在しないサービスを catalog に載せると
+  『存在しないものが存在するように見える』（ADR-2607301300 が塞いだのと同じ失敗）。
+  預かる面が動いたら、`https://<host>/.well-known/x402` を出して
+  `POST https://x402.nexus/apply` に origin を送るだけで登録できる（payTo は自分の
+  discovery document から読まれるのでトークン不要）。
+- **quota は台帳ではない。** `remaining` は使用量カウンタを引数で要求する ——
+  純粋な関数では二重使用を防げないので、カウンタを持たないまま『確認した』と言える
+  経路を作らない。そのカウンタの実体はまだ無い。
+- **封筒を預かる面が動いていない。** kagi 側は object store（Storj / B2）と IPFS の
+  両方の `SealedBlockStore` を持ち、この repo は 4 関数を受け取れるが、それを実際に
+  配線して運用しているホストはまだ無い。
+- **鍵の保管をこの repo は決めない。** DEK をどこに置くか（kagi の compartment、
+  開示相手への grant envelope、本人の端末）は呼び出し側の責任のまま。
+- **ブラウザ側の署名が未配線。** `provenance` は注入で両対応だが、ページはまだ
+  attestation を作らない（`kagi.crypto.noble` の Ed25519 を渡せば動く形にはなっている）。
 
 ## License
 

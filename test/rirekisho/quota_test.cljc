@@ -1,0 +1,81 @@
+(ns rirekisho.quota-test
+  (:require [clojure.test :refer [deftest is testing]]
+            [rirekisho.quota :as q]))
+
+(def ^:private order
+  {:order-id "ord-1" :bytes 10485760 :months 12 :discloses 50
+   :payment "0xabc123" :expires-on "2027-07-30"})
+
+(deftest a-quota-round-trips-through-its-resource-uri
+  (let [uri (q/resource-uri order)]
+    (is (= "x402://quota/ord-1?bytes=10485760&months=12&discloses=50&expires=2027-07-30&payment=0xabc123"
+           uri))
+    (is (= (select-keys order [:order-id :bytes :months :discloses :payment :expires-on])
+           (q/parse uri)))))
+
+(deftest someone-elses-resource-is-not-read-as-ours
+  (is (nil? (q/parse "rirekisho://disclose/rid:z?fields=name")))
+  (is (nil? (q/parse "kotoba://can/kotobase:pin"))))
+
+(deftest a-payment-reference-is-required
+  (testing "支払いの参照が無いと、後で『払った』と言われた時に照合できない"
+    (is (thrown? #?(:clj clojure.lang.ExceptionInfo :cljs js/Error)
+                 (q/resource-uri (dissoc order :payment))))
+    (is (= :required (:problem (first (q/problems (dissoc order :payment) "2026-07-30")))))))
+
+(deftest a-quota-that-buys-nothing-is-refused
+  (is (= :buys-nothing
+         (:problem (first (q/problems (assoc order :bytes 0 :months 0 :discloses 0)
+                                      "2026-07-30"))))))
+
+(deftest negative-amounts-are-refused
+  (is (= :must-not-be-negative
+         (:problem (first (q/problems (assoc order :bytes -1) "2026-07-30"))))))
+
+(deftest an-unbounded-prepayment-is-refused
+  (testing "無期限の前払いは、事業をやめた後も債務が残る"
+    (is (= :exceeds-max-lifetime
+           (:problem (first (q/problems (assoc order :expires-on "2030-01-01")
+                                        "2026-07-30")))))
+    (is (= :required-and-must-be-a-date
+           (:problem (first (q/problems (dissoc order :expires-on) "2026-07-30")))))))
+
+(deftest a-well-formed-quota-has-no-problems
+  (is (empty? (q/problems order "2026-07-30"))))
+
+;; ───────── 残量は台帳を要求する ─────────
+
+(deftest remaining-refuses-to-answer-without-a-counter
+  (testing "カウンタを持たないまま『quota を確認した』と言える経路を作らない"
+    (is (thrown-with-msg?
+         #?(:clj clojure.lang.ExceptionInfo :cljs js/Error) #"durable counter"
+         (q/remaining order nil "2026-07-30")))))
+
+(deftest remaining-subtracts-what-was-consumed
+  (let [{:keys [remaining expired?]}
+        (q/remaining order {:bytes 485760 :discloses 8} "2026-07-30")]
+    (is (false? expired?))
+    (is (= 10000000 (:bytes remaining)))
+    (is (= 42 (:discloses remaining)))))
+
+(deftest consumption-never-goes-negative
+  (let [{:keys [remaining]} (q/remaining order {:bytes 99999999 :discloses 999} "2026-07-30")]
+    (is (= 0 (:bytes remaining)))
+    (is (= 0 (:discloses remaining)))))
+
+(deftest expiry-is-reported-separately-from-exhaustion
+  (testing "期限切れを残量ゼロと同じ形で返すと、呼び出し側が取り違える"
+    (let [r (q/remaining order {:bytes 0 :discloses 0} "2027-08-01")]
+      (is (true? (:expired? r)))
+      (testing "残量そのものはまだある —— 使えないのは期限のせいだと分かる"
+        (is (pos? (:bytes (:remaining r))))))))
+
+(deftest an-expired-quota-covers-nothing-however-much-is-left
+  (is (false? (q/covers? order {:bytes 0 :discloses 0} "2027-08-01" {:bytes 1})))
+  (is (true? (q/covers? order {:bytes 0 :discloses 0} "2026-07-30" {:bytes 1}))))
+
+(deftest covers-checks-both-dimensions
+  (is (false? (q/covers? order {:bytes 0 :discloses 50} "2026-07-30" {:discloses 1})))
+  (is (false? (q/covers? order {:bytes 10485760 :discloses 0} "2026-07-30" {:bytes 1})))
+  (is (true? (q/covers? order {:bytes 0 :discloses 0} "2026-07-30"
+                        {:bytes 1024 :discloses 1}))))
