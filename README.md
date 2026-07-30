@@ -106,8 +106,11 @@ clojure -M:lint
   を文字列として受け取るだけ。
 - **x402 課金が未配線。** `nexus-x402`（`x402.nexus`、稼働中）に seller 登録して
   prepaid quota を CACAO の `resources` に焼く設計だが、未実装。
-- **kagi の SealedBlockStore の B2/IPFS/Storj adapter が未実装**（kagi 側の既知の穴）。
-  ①の面は現状ローカルにしか着地しない。
+- **①の面の保存先の配線が未実装**（この repo 側）。kagi 側は 2026-07-30 に
+  `kagi.store/object-sealed-block-store` が入り、`storj.store/store-fns` 経由で
+  **Storj / Backblaze B2 に着地できるようになった**（IPFS は未対応 — immutable な
+  content addressing は「キーを上書きしない」の前提が別物）。この repo はまだその
+  4 関数を受け取る口を持っておらず、`envelope/seal` の出力を誰が置くかは呼び出し側任せ。
 
 ## License
 
