@@ -29,7 +29,7 @@
   バイト互換は主張ではなく**テストで確かめている** —— `provenance_nekko_test` が実
   `cbor.core` と実 `ed25519.core` を注入して作った attestation を、実
   `nekko.sigref/valid?` に通す。"
-  (:require [clojure.string :as str]))
+  (:require [kotoba.lang.text :as str]))
 
 (def ref-prefix "refs/rirekisho/")
 
