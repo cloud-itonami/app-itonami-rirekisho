@@ -21,7 +21,7 @@
 
   cohort は **メンバー一覧を持たない**。誰が属するかを持った時点で k-匿名は
   意味を失う。属性は count と集計だけ。"
-  (:require [clojure.string :as str]))
+  (:require [kotoba.lang.text :as str]))
 
 (def default-k
   "公開に要する最小人数。5 は「小さすぎない」下限であって、これで十分という値では

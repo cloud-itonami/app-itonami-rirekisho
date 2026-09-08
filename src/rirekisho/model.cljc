@@ -22,7 +22,7 @@
   性別は `[男・女]` の選択ではなく **自由記述の任意欄**(`:gender-note`)。列挙型に
   しないのは、性自認の多様な在り方に対応するという変更理由そのものが「選択肢を
   用意しない」ことだったため。未記載も正当な状態なので `nil` を許す。"
-  (:require [clojure.string :as str]))
+  (:require [kotoba.lang.text :as str]))
 
 (def spec-source
   {:issuer "厚生労働省"

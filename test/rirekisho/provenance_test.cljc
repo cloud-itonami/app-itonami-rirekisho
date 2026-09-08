@@ -1,7 +1,7 @@
 (ns rirekisho.provenance-test
   "注入した偽の暗号で、この ns 自身の判断（何を照合し、何を拒むか）を見る。
   nekko との**バイト互換**は `provenance-nekko-test` が実 CBOR・実 Ed25519 で見る。"
-  (:require [clojure.string :as str]
+  (:require [kotoba.lang.text :as str]
             [clojure.test :refer [deftest is testing]]
             [rirekisho.provenance :as prov]))
 

@@ -25,7 +25,7 @@
   - 問題は**全部**返す（1 つ目で止めない）。フォームの背後に立つ値なので。
   - ここは識別情報を持つ面。cohort へ出すのは `rirekisho.cohort` の射影だけで、
     会社名も担当業務もそちらへは渡らない（在籍企業名は個人を特定しうる）。"
-  (:require [clojure.string :as str]))
+  (:require [kotoba.lang.text :as str]))
 
 (def styles
   {:chronological         {:label "編年式" :order :ascending}

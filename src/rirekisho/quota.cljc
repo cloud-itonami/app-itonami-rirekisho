@@ -20,7 +20,7 @@
   だから `remaining` は `consumed` を**引数で要求する**。省略可能にすると、カウンタを
   持たないまま『quota を確認した』と言える経路ができてしまう。数字がどこから来るかは
   呼び出し側の責任で、この ns はその数字なしには答えを出さない。"
-  (:require [clojure.string :as str]))
+  (:require [kotoba.lang.text :as str]))
 
 (def scheme "x402://quota/")
 
