@@ -12,7 +12,7 @@
 ;; (ここでは `rirekisho.model`) のまま評価され、裸の `require` で入れた別名が
 ;; 解決できない。実測: `Could not resolve symbol: model/problems`。
 (ns rirekisho.app
-  (:require [clojure.string :as str]
+  (:require [kotoba.lang.text :as str]
             [rirekisho.model :as model]
             [rirekisho.shokureki :as shokureki]))
 
