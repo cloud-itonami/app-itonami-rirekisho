@@ -132,8 +132,8 @@ attestation は [`nekko`](https://github.com/kotoba-lang/kotoba-rad)（Radicle �
 ## 開発
 
 ```sh
-clojure -M:test    # 84 tests / 155 assertions
-clojure -M:lint
+kbb -M:test    # 84 tests / 155 assertions
+kbb -M:lint
 ```
 
 ## まだ無いもの
