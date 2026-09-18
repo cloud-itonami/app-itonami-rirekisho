@@ -245,6 +245,6 @@
     ;; 第三者に「誰がいつ開いたか」を渡すことになる。
     :head [[:script {:src "./scittle.js"}]
            [:script {:type "application/x-scittle" :src "./rirekisho/model.cljk"}]
-           [:script {:type "application/x-scittle" :src "./rirekisho/shokureki.cljs"}]
-           [:script {:type "application/x-scittle" :src "./app.cljs"}]]}
+           [:script {:type "application/x-scittle" :src "./rirekisho/shokureki.cljk"}]
+           [:script {:type "application/x-scittle" :src "./app.cljk"}]]}
    (body)))
