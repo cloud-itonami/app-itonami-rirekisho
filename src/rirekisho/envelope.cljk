@@ -17,7 +17,7 @@
   この ns は kagi に依存しない —— provider を引数で受け取るだけ。ブラウザでは
   `kagi.crypto.noble/noble-provider`、JVM では `kagi.crypto/jvm-provider` を渡す。
   どちらも同じ `Provider` を満たし、相互運用は kagi 側の双方向テストが保証する。"
-  (:require [clojure.edn :as edn]
+  (:require [kotoba.lang.edn :as edn]
             [rirekisho.model :as model]))
 
 (def envelope-keys
