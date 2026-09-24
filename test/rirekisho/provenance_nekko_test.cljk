@@ -9,7 +9,7 @@
   nekko と ed25519 は **test-only の依存**（`:nekko` alias）。この repo の実行時は
   依存ゼロのままで、ブラウザ側は `kagi.crypto.noble` の Ed25519 を注入して同じことをする。"
   (:require [cbor.core :as cbor]
-            [clojure.test :refer [deftest is testing]]
+            [kotoba.test :refer [deftest is testing]]
             [ed25519.core :as ed]
             [nekko.sigref :as sigref]
             [rirekisho.provenance :as prov]))
