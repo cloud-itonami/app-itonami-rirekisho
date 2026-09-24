@@ -22,7 +22,7 @@
   talent(ADR-0018) と同じく、フラグを立てるのではなく datom を retract する。
   `:disclosure/revoked? true` を足す実装は、フラグを読み落とした 1 つのクエリが
   そのまま漏洩になる。"
-  (:require [clojure.set :as set]
+  (:require [kotoba.lang.coll :as set]
             [rirekisho.model :as model]))
 
 (def max-lifetime-days
