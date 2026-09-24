@@ -1,5 +1,5 @@
 (ns rirekisho.model-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.test :refer [deftest is testing]]
             [rirekisho.model :as model]))
 
 (def ^:private base

@@ -1,6 +1,6 @@
 (ns rirekisho.store-test
   (:require [kotoba.lang.text :as str]
-            [clojure.test :refer [deftest is testing]]
+            [kotoba.test :refer [deftest is testing]]
             [rirekisho.store :as store]))
 
 (def ^:private resume

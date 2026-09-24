@@ -1,5 +1,5 @@
 (ns rirekisho.disclosure-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.test :refer [deftest is testing]]
             [rirekisho.disclosure :as d]))
 
 (def ^:private g

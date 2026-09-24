@@ -1,7 +1,7 @@
 (ns rirekisho.envelope-test
   "provider は注入なので、ここでは kagi を持ち込まず可逆な fake で不変条件だけを見る。
   実暗号との相互運用は kagi 側の双方向テストが受け持つ(責務を二重に持たない)。"
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.test :refer [deftest is testing]]
             [rirekisho.envelope :as env]))
 
 (def ^:private resume

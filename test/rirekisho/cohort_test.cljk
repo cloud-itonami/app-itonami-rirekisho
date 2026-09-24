@@ -1,5 +1,5 @@
 (ns rirekisho.cohort-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.test :refer [deftest is testing]]
             [rirekisho.cohort :as cohort]))
 
 (deftest projection-carries-no-identifying-field
